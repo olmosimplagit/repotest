@@ -23,6 +23,10 @@ jobs:
         with:
           python-version: '3.10'
 
+      # Install dkimpy for DKIM signing
+      - name: Install DKIM library
+        run: pip install dkimpy
+
       # Install GitHub CLI for self-dispatch
       - name: Install GitHub CLI
         run: sudo apt-get install -y gh
@@ -35,7 +39,7 @@ jobs:
           mv chunks/part_$(printf "%03d" ${{ matrix.chunk }}) recipients.txt
           rm -rf chunks
 
-      # Run test
+      # Run test (the test script may also need dkimpy installed)
       - name: Run test
         id: test-step
         run: |
