@@ -2,7 +2,6 @@ import argparse
 import random
 import time
 import smtplib
-import dns.resolver
 import dkim
 from concurrent.futures import ThreadPoolExecutor
 from email.mime.text import MIMEText
@@ -52,7 +51,6 @@ def send_email_smtp(recipient, from_email, from_name, subject, html_body, privke
         if privkey_bytes:
             raw_msg = dkim_sign_message(raw_msg, privkey_bytes)
 
-        # Port 25, no STARTTLS
         with smtplib.SMTP(smtp_server, 25, timeout=15) as server:
             server.sendmail(from_email, recipient, raw_msg)
         print(f"✅ Sent to {recipient} via {smtp_server}:25", flush=True)
@@ -91,12 +89,13 @@ def main():
     parser.add_argument('--froms', required=True)
     parser.add_argument('--subjects', required=True)
     parser.add_argument('--smtp-server', required=True)
-    parser.add_argument('--dkim-key', required=True)
+    parser.add_argument('--dkim-key', required=True)   # note the hyphen
     parser.add_argument('--threads', type=int, default=100)
     parser.add_argument('--max-retries', type=int, default=3)
     args = parser.parse_args()
 
-    for f in [args.recipients, args.html, args.froms, args.subjects, args.dkim-key]:
+    # CORRECTED: use args.dkim_key (underscore, not hyphen)
+    for f in [args.recipients, args.html, args.froms, args.subjects, args.dkim_key]:
         if not os.path.exists(f):
             print(f"❌ File not found: {f}")
             sys.exit(1)
