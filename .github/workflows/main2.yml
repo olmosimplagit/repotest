@@ -23,15 +23,16 @@ jobs:
         with:
           python-version: '3.10'
 
-      # Install dkimpy for DKIM signing
-      - name: Install DKIM library
-        run: pip install dkimpy
+      # Install required libraries
+      - name: Install dependencies
+        run: |
+          pip install dkimpy dnspython
 
       # Install GitHub CLI for self-dispatch
       - name: Install GitHub CLI
         run: sudo apt-get install -y gh
 
-      # Split recipients
+      # Split recipients into 256 chunks
       - name: Split recipients
         run: |
           mkdir -p chunks
@@ -39,7 +40,7 @@ jobs:
           mv chunks/part_$(printf "%03d" ${{ matrix.chunk }}) recipients.txt
           rm -rf chunks
 
-      # Run test (the test script may also need dkimpy installed)
+      # Run test (emp_test.py does not need DKIM)
       - name: Run test
         id: test-step
         run: |
@@ -50,7 +51,7 @@ jobs:
             --froms ./froms.txt \
             --subjects ./subjects.txt \
             --smtp-server outlook-com.olc.protection.outlook.com \
-            --threads 2 \
+            --threads 1 \
             --test-only
 
       # Retry failed chunk on a new runner
@@ -62,7 +63,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Send only if test succeeded
+      # Send only if test succeeded (with DKIM key from repo)
       - name: Run send
         if: success()
         run: |
@@ -73,4 +74,5 @@ jobs:
             --froms ./froms.txt \
             --subjects ./subjects.txt \
             --smtp-server outlook-com.olc.protection.outlook.com \
-            --threads 100
+            --dkim-key ./dkim_private.pem \
+            --threads 25
