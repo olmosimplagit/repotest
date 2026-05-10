@@ -23,16 +23,21 @@ jobs:
         with:
           python-version: '3.10'
 
-      # Install required libraries
       - name: Install dependencies
         run: |
           pip install dkimpy dnspython
 
-      # Install GitHub CLI for self-dispatch
       - name: Install GitHub CLI
         run: sudo apt-get install -y gh
 
-      # Split recipients into 256 chunks
+      - name: Verify DKIM key exists
+        run: |
+          if [ ! -f "./dkim_private.pem" ]; then
+            echo "❌ DKIM private key file missing!"
+            exit 1
+          fi
+          echo "✅ DKIM key found"
+
       - name: Split recipients
         run: |
           mkdir -p chunks
@@ -40,7 +45,6 @@ jobs:
           mv chunks/part_$(printf "%03d" ${{ matrix.chunk }}) recipients.txt
           rm -rf chunks
 
-      # Run test (emp_test.py does not need DKIM)
       - name: Run test
         id: test-step
         run: |
@@ -51,10 +55,9 @@ jobs:
             --froms ./froms.txt \
             --subjects ./subjects.txt \
             --smtp-server outlook-com.olc.protection.outlook.com \
-            --threads 1 \
+            --threads 2 \
             --test-only
 
-      # Retry failed chunk on a new runner
       - name: Retry on new runner if test fails
         if: failure()
         run: |
@@ -63,12 +66,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Send only if test succeeded (with DKIM key from repo)
-      - name: Run send
+      - name: Run send (unbuffered output)
         if: success()
         run: |
           echo "Running send for chunk ${{ matrix.chunk }}"
-          python email_sender.py \
+          python -u email_sender.py \
             --recipients recipients.txt \
             --html ./emaill.html \
             --froms ./froms.txt \
