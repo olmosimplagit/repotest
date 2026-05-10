@@ -6,6 +6,7 @@ import dkim
 from concurrent.futures import ThreadPoolExecutor
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import make_msgid, formatdate
 import os
 import sys
 
@@ -21,40 +22,60 @@ def load_private_key(key_path):
         return f.read()
 
 def dkim_sign_message(msg_bytes, privkey_bytes):
+    """Sign the message with DKIM using relaxed/relaxed canonicalization."""
     if not privkey_bytes:
         return msg_bytes
+
+    # Headers to include in the signature (add more as needed)
+    headers_to_sign = [
+        b'from', b'to', b'subject', b'date',
+        b'message-id', b'mime-version', b'content-type'
+    ]
+
     signature = dkim.sign(
         message=msg_bytes,
         selector=DKIM_SELECTOR.encode(),
         domain=YOUR_DOMAIN.encode(),
         privkey=privkey_bytes,
-        include_headers=[b'from', b'to', b'subject', b'date']
+        include_headers=headers_to_sign,
+        canonicalize=(b'relaxed', b'relaxed')   # relaxed for both header and body
     )
+    # Insert the DKIM header into the raw message
     lines = msg_bytes.split(b'\r\n')
     for i, line in enumerate(lines):
         if line == b'':
             break
     lines.insert(i, signature)
-    return b'\r\n'.join(lines)
+    signed_msg = b'\r\n'.join(lines)
+    
+    # Debug: print the DKIM signature (first 200 chars)
+    print(f"🔏 DKIM Signature: {signature[:200]}...", flush=True)
+    return signed_msg
 
 def send_email_smtp(recipient, from_email, from_name, subject, html_body, privkey_bytes, smtp_server):
     sys.stdout.flush()
     print(f"🔹 Connecting to {recipient}...", flush=True)
     try:
+        # Build message
         msg = MIMEMultipart()
         msg['From'] = f"{from_name} <{from_email}>"
         msg['To'] = recipient
         msg['Subject'] = subject
+        msg['Date'] = formatdate(localtime=True)
+        msg['Message-ID'] = make_msgid(domain=YOUR_DOMAIN)
         msg.attach(MIMEText(html_body, 'html'))
 
+        # Convert to bytes and sign
         raw_msg = msg.as_string().encode('utf-8')
         if privkey_bytes:
             raw_msg = dkim_sign_message(raw_msg, privkey_bytes)
 
+        # Send via port 25 (no TLS)
         with smtplib.SMTP(smtp_server, 25, timeout=15) as server:
             server.sendmail(from_email, recipient, raw_msg)
         print(f"✅ Sent to {recipient} via {smtp_server}:25", flush=True)
         return True
+
     except smtplib.SMTPResponseException as e:
         if 450 <= e.smtp_code <= 499:
             print(f"🔄 Temp error for {recipient}: {e.smtp_code}", flush=True)
@@ -89,12 +110,12 @@ def main():
     parser.add_argument('--froms', required=True)
     parser.add_argument('--subjects', required=True)
     parser.add_argument('--smtp-server', required=True)
-    parser.add_argument('--dkim-key', required=True)   # note the hyphen
+    parser.add_argument('--dkim-key', required=True)
     parser.add_argument('--threads', type=int, default=100)
     parser.add_argument('--max-retries', type=int, default=3)
     args = parser.parse_args()
 
-    # CORRECTED: use args.dkim_key (underscore, not hyphen)
+    # Verify all input files exist
     for f in [args.recipients, args.html, args.froms, args.subjects, args.dkim_key]:
         if not os.path.exists(f):
             print(f"❌ File not found: {f}")
